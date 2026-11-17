@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة مخزون المختبر الآمن</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 0; }
+        header { background-color: #0d253f; color: white; padding: 20px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; }
+        .logout-btn { position: absolute; left: 20px; top: 22px; background-color: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; display: none; }
+        .status-bar { padding: 10px; text-align: center; font-weight: bold; font-size: 14px; background-color: #e2e8f0; color: #0d253f; }
+        .status-success { background-color: #d4edda; color: #155724; border-bottom: 1px solid #c3e6cb; }
+        .status-error { background-color: #f8d7da; color: #721c24; border-bottom: 1px solid #f5c6cb; }
+        .container { max-width: 900px; margin: 30px auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .login-box { max-width: 400px; margin: 60px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }
+        .login-box input { width: 100%; box-sizing: border-box; margin-bottom: 15px; padding: 12px; border: 1px solid #ccc; border-radius: 5px; }
+        h2 { color: #0d253f; border-bottom: 2px solid #0d253f; padding-bottom: 10px; }
+        .form-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        input, select, button { padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 15px; }
+        button.add-btn { background-color: #0d253f; color: white; border: none; cursor: pointer; font-weight: bold; width: 100%; }
+        button.add-btn:hover { background-color: #163a63; }
+        .search-box { width: 100%; box-sizing: border-box; margin-bottom: 15px; border: 2px solid #0d253f; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: right; border-bottom: 1px solid #ddd; }
+        th { background-color: #0d253f; color: white; }
+        .action-btn { padding: 5px 10px; margin-left: 5px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; }
+        .btn-plus { background-color: #28a745; }
+        .btn-minus { background-color: #ffc107; color: black; }
+        .btn-del { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>نظام إدارة مخزون المختبر الإلكتروني 🔒</h1>
+    <button id="logoutBtn" class="logout-btn" onclick="logout()">تسجيل خروج</button>
+</header>
+
+<div id="statusBar" class="status-bar">🔒 النظام محمي: يرجى تسجيل الدخول للمتابعة</div>
+
+<div id="loginSection" class="login-box">
+    <h2>تسجيل دخول المدير</h2>
+    <input type="email" id="loginEmail" placeholder="البريد الإلكتروني (مثال: admin@lab.com)">
+    <input type="password" id="loginPassword" placeholder="كلمة المرور">
+    <button class="add-btn" onclick="login()">دخول للنظام</button>
+</div>
+
+<div id="appSection" class="container" style="display: none;">
+    <h2>إضافة قطعة إلكترونية جديدة</h2>
+    <div class="form-group">
+        <input type="text" id="compName" placeholder="اسم القطعة (مثال: ATmega328P)">
+        <select id="compCategory">
+            <option value="متحكمات دقيقة (Microcontrollers)">متحكمات دقيقة (Microcontrollers)</option>
+            <option value="مكثفات (Capacitors)">مكثفات (Capacitors)</option>
+            <option value="ترانزستورات (Transistors)">ترانزستورات (Transistors)</option>
+            <option value="مقاومات وملفات">مقاومات وملفات</option>
+        </select>
+        <input type="number" id="compQty" placeholder="الكمية" min="1">
+        <input type="text" id="compLoc" placeholder="مكان التخزين (مثال: درج A1)">
+        <button class="add-btn" onclick="addComponent()">إضافة للمخزون</button>
+    </div>
+
+    <h2>المخزون الحالي</h2>
+    <input type="text" id="searchInput" class="search-box" onkeyup="filterTable()" placeholder="ابحث باسم القطعة أو مكان التخزين...">
+    
+    <table>
+        <thead>
+            <tr>
+                <th>اسم القطعة</th>
+                <th>التصنيف</th>
+                <th>الكمية</th>
+                <th>مكان التخزين</th>
+                <th>إجراءات</th>
+            </tr>
+        </thead>
+        <tbody id="inventoryBody"></tbody>
+    </table>
+</div>
+<script>
+    const rawUrl = 'https://bnygaeaviuotohuycrbv.supabase.co/rest/v1/';
+    const SUPABASE_KEY = 'sb_publishable_lZIt7SQV_uLa5qw21rV-tg_AuKlPihn';
+
+    const SUPABASE_URL = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
+    const API_ENDPOINT = SUPABASE_URL + '/rest/v1/components';
+    const AUTH_ENDPOINT = SUPABASE_URL + '/auth/v1/token?grant_type=password';
+
+    let accessToken = localStorage.getItem('sb_access_token') || null;
+    let inventory = [];
+
+    function updateStatus(message, type) {
+        const bar = document.getElementById("statusBar");
+        bar.textContent = message;
+        bar.className = "status-bar " + (type === 'success' ? "status-success" : type === 'error' ? "status-error" : "");
+    }
+
+    function getAuthHeaders() {
+        return {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + accessToken,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+        };
+    }
+
+    async function login() {
+        const email = document.getElementById("loginEmail").value.trim();
+        const password = document.getElementById("loginPassword").value;
+
+        if (!email || !password) {
+            updateStatus("❌ يرجى إدخال البريد الإلكتروني وكلمة المرور", "error");
+            return;
+        }
+
+        updateStatus("⏳ جاري التحقق من بيانات الدخول...", "");
+
+        try {
+            const response = await fetch(AUTH_ENDPOINT, {
+                method: 'POST',
+                headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, password: password })
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error_description || data.msg || "بيانات الدخول غير صحيحة");
+
+            accessToken = data.access_token;
+            localStorage.setItem('sb_access_token', accessToken);
+            showApp();
+        } catch (error) {
+            updateStatus("❌ فشل تسجيل الدخول: " + error.message, "error");
+        }
+    }
+
+    function logout() {
+        accessToken = null;
+        localStorage.removeItem('sb_access_token');
+        document.getElementById("loginSection").style.display = "block";
+        document.getElementById("appSection").style.display = "none";
+        document.getElementById("logoutBtn").style.display = "none";
+        updateStatus("🔒 تم تسجيل الخروج بنجاح", "");
+    }
+
+    function showApp() {
+        document.getElementById("loginSection").style.display = "none";
+        document.getElementById("appSection").style.display = "block";
+        document.getElementById("logoutBtn").style.display = "block";
+        fetchComponents();
+    }
+
+    async function fetchComponents() {
+        try {
+            const response = await fetch(API_ENDPOINT + '?select=*&order=id.asc', { method: 'GET', headers: getAuthHeaders() });
+            if (response.status === 401) {
+                logout();
+                updateStatus("⚠️ انتهت جلسة الدخول، يرجى الدخول مجدداً", "error");
+                return;
+            }
+            if (!response.ok) throw new Error("تعذر جلب البيانات");
+
+            inventory = await response.json();
+            updateStatus("✅ متصل بوضع آمن (Authenticated) | عدد القطع: " + inventory.length, "success");
+            renderTable();
+        } catch (error) {
+            updateStatus("❌ خطأ: " + error.message, "error");
+        }
+    }
+
+    function renderTable(data) {
+        if (!data) data = inventory;
+        const tbody = document.getElementById("inventoryBody");
+        tbody.innerHTML = "";
+        data.forEach(function(item) {
+            tbody.innerHTML += '<tr>' +
+                '<td>' + item.name + '</td>' +
+                '<td>' + item.category + '</td>' +
+                '<td><strong>' + item.qty + '</strong></td>' +
+                '<td>' + item.location + '</td>' +
+                '<td>' +
+                    '<button class="action-btn btn-plus" onclick="updateQty(' + item.id + ', ' + (item.qty + 1) + ')">+</button>' +
+                    '<button class="action-btn btn-minus" onclick="updateQty(' + item.id + ', ' + (item.qty - 1) + ')">-</button>' +
+                    '<button class="action-btn btn-del" onclick="deleteItem(' + item.id + ')">حذف</button>' +
+                '</td></tr>';
+        });
+    }
+
+    async function addComponent() {
+        const name = document.getElementById("compName").value.trim();
+        const category = document.getElementById("compCategory").value;
+        const qty = parseInt(document.getElementById("compQty").value);
+        const location = document.getElementById("compLoc").value.trim();
+
+        if (!name || isNaN(qty) || qty <= 0 || !location) {
+            alert("يرجى ملء جميع الحقول بشكل صحيح!");
+            return;
+        }
+
+        try {
+            const response = await fetch(API_ENDPOINT, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ name: name, category: category, qty: qty, location: location })
+            });
+            if (!response.ok) throw new Error("غير مصرح لك بالإضافة");
+
+            document.getElementById("compName").value = "";
+            document.getElementById("compQty").value = "";
+            document.getElementById("compLoc").value = "";
+            fetchComponents();
+        } catch (error) {
+            updateStatus("❌ خطأ: " + error.message, "error");
+        }
+    }
+
+    async function updateQty(id, newQty) {
+        if (newQty < 0) return;
+        try {
+            const response = await fetch(API_ENDPOINT + '?id=eq.' + id, {
+                method: 'PATCH',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ qty: newQty })
+            });
+            if (!response.ok) throw new Error("تعذر التحديث");
+            fetchComponents();
+        } catch (error) {
+            updateStatus("❌ خطأ: " + error.message, "error");
+        }
+    }
+
+    async function deleteItem(id) {
+        try {
+            const response = await fetch(API_ENDPOINT + '?id=eq.' + id, { method: 'DELETE', headers: getAuthHeaders() });
+            if (!response.ok) throw new Error("تعذر الحذف");
+            fetchComponents();
+        } catch (error) {
+            updateStatus("❌ خطأ: " + error.message, "error");
+        }
+    }
+
+    function filterTable() {
+        const query = document.getElementById("searchInput").value.toLowerCase();
+        const filtered = inventory.filter(function(item) {
+            return item.name.toLowerCase().includes(query) || item.location.toLowerCase().includes(query);
+        });
+        renderTable(filtered);
+    }
+
+    if (accessToken) showApp();
+</script>
+</body>
+</html>
